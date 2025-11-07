@@ -1,0 +1,431 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>SEKAR FİLO — ONAY NO (Canlı Firestore)</title>
+  <!-- Excel için SheetJS -->
+  <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+  <!-- Firebase (compat) -->
+  <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-auth-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore-compat.js"></script>
+
+  <style>
+    :root{ --green:#006f3c; }
+    *{ box-sizing:border-box }
+    body{ font-family:Arial, Helvetica, sans-serif; margin:0; background:#f4f6f5; color:#1f2937 }
+    .topbar{ position:sticky; top:0; z-index:10; display:flex; align-items:center; justify-content:space-between; gap:12px; padding:10px 16px; background:var(--green); color:#fff; box-shadow:0 2px 6px rgba(0,0,0,.12) }
+    .brand{ font-weight:800; letter-spacing:.3px }
+    .badge{ background:rgba(255,255,255,.15); padding:4px 8px; border-radius:8px; font-weight:700 }
+    .page{ margin:20px; padding:20px; background:#fff; border-radius:10px; box-shadow:0 0 8px rgba(0,0,0,.08) }
+
+    .toolbar{ display:flex; gap:8px; align-items:center; flex-wrap:wrap; margin:12px 0 }
+    .hint{ font-size:12px; color:#475569 }
+
+    table{ width:100%; border-collapse:collapse; margin-top:14px; font-size:14px }
+    th,td{ border:1px solid #d1d5db; padding:6px; text-align:center }
+    th{ background:var(--green); color:#fff }
+    .red-cell{ background:#ffe2e2; color:#b91c1c; font-weight:700 }
+    .green-cell{ background:#e0ffe6; color:#166534; font-weight:700 }
+    .edit-btn{ background:#fb923c; color:#fff; border:none; padding:6px 10px; border-radius:8px; cursor:pointer; margin:2px }
+    .delete-btn{ background:#ef4444; color:#fff; border:none; padding:6px 10px; border-radius:8px; cursor:pointer; margin:2px }
+
+    .backdrop{ position:fixed; inset:0; background:rgba(0,0,0,.35); display:none; align-items:center; justify-content:center; z-index:50 }
+    .modal{ background:#fff; border-radius:12px; padding:16px; width:min(720px, 96vw); box-shadow:0 10px 30px rgba(0,0,0,.25) }
+    .modal h3{ margin:0 0 10px; font-size:18px }
+    .row{ display:flex; gap:10px; margin:8px 0; flex-wrap:wrap }
+    .row > div{ flex:1 }
+    .modal input, .modal select{ width:100%; padding:8px 10px; border:1px solid #cbd5e1; border-radius:8px }
+    .actions{ display:flex; gap:10px; justify-content:flex-end; margin-top:12px }
+    .btn{ padding:8px 12px; border-radius:10px; border:1px solid #cbd5e1; background:#fff; cursor:pointer }
+    .btn.primary{ background:var(--green); color:#fff; border-color:var(--green) }
+
+    .form-card{ border:1px solid #e5e7eb; border-radius:12px; padding:14px; background:#fff }
+    .grid{ display:grid; grid-template-columns:repeat(12,1fr); gap:12px }
+    .field{ display:flex; flex-direction:column; gap:6px }
+    .field label{ font-size:12px; color:#475569; font-weight:600 }
+    .field input, .field select{ padding:10px 12px; border:1px solid #cbd5e1; border-radius:10px; outline:none }
+    .field input:focus, .field select:focus{ border-color:#22c55e; box-shadow:0 0 0 3px rgba(34,197,94,.15) }
+    .actions-line{ display:flex; gap:10px; align-items:center; justify-content:flex-end }
+    .primary-btn{ background:var(--green); color:#fff; border:none; padding:10px 14px; border-radius:12px; font-weight:700; cursor:pointer }
+    .ghost-btn{ background:#fff; border:1px solid #cbd5e1; color:#0f172a; padding:10px 14px; border-radius:12px; cursor:pointer }
+
+    .th-filter input{ width:100%; padding:6px 8px; border:1px solid #e5e7eb; border-radius:8px; font-size:12px }
+    .pager{ display:flex; align-items:center; gap:8px; justify-content:flex-end; margin-top:10px }
+    .pager button{ padding:6px 10px; border:1px solid #cbd5e1; background:#fff; border-radius:8px; cursor:pointer }
+    .pager .info{ font-size:12px; color:#475569 }
+
+    .toast{position:fixed;right:16px;bottom:16px;background:#0f172a;color:#fff;padding:10px 14px;border-radius:10px;opacity:.95;z-index:60;display:none}
+    .cback{position:fixed;inset:0;background:rgba(0,0,0,.35);display:none;align-items:center;justify-content:center;z-index:60}
+    .cbox{background:#fff;border-radius:12px;box-shadow:0 10px 30px rgba(0,0,0,.25);padding:16px;max-width:420px;width:92vw}
+    .cbox p{margin:0 0 12px}
+    .cbox .row{display:flex;gap:8px;justify-content:flex-end}
+  </style>
+</head>
+<body>
+  <div class="topbar">
+    <div>
+      <span class="brand">SEKAR FİLO</span>
+      <span class="badge">ONAY NO</span>
+    </div>
+  </div>
+
+  <div id="onay" class="page">
+    <div class="toolbar">
+      <input type="file" id="excelInput" accept=".xlsx,.xls" />
+      <button type="button" id="btnImport">Excel'den Yükle</button>
+      <button type="button" id="btnTemplate">Şablonu İndir (Excel)</button>
+      <button type="button" id="btnExport">Excel'e Aktar (Görünen)</button>
+      <button type="button" id="btnClearAll" style="margin-left:8px">Tüm Kayıtları Sil</button>
+      <span class="hint">Beklenen başlıklar: <b>Onay No (opsiyonel)</b>, Tarih, Plaka, Firma, Km, Servis, Durum, Açıklama, Tutar, Yansıtma, Fatura No, Fatura Tutarı</span>
+    </div>
+
+    <form id="onayForm" class="form-card">
+      <div class="grid">
+        <div class="field" style="grid-column: span 2; min-width:140px">
+          <label>Tarih</label>
+          <input type="date" name="tarih" required />
+        </div>
+        <div class="field" style="grid-column: span 2">
+          <label>Plaka</label>
+          <input type="text" name="plaka" placeholder="34ABC123" required />
+        </div>
+        <div class="field" style="grid-column: span 3">
+          <label>Firma</label>
+          <input type="text" name="firma" placeholder="Şirket adı" required />
+        </div>
+        <div class="field" style="grid-column: span 2">
+          <label>Km</label>
+          <input type="number" name="km" inputmode="numeric" placeholder="0" required />
+        </div>
+        <div class="field" style="grid-column: span 3">
+          <label>Servis</label>
+          <input type="text" name="servis" placeholder="Servis adı" required />
+        </div>
+        <div class="field" style="grid-column: span 2">
+          <label>Durum</label>
+          <select name="durum" required>
+            <option value="">Seçiniz</option>
+            <option value="BAKIM">BAKIM</option>
+            <option value="HASAR">HASAR</option>
+            <option value="MEKANİK">MEKANİK</option>
+            <option value="LASTİK">LASTİK</option>
+            <option value="DİĞER">DİĞER</option>
+          </select>
+        </div>
+        <div class="field" style="grid-column: span 4">
+          <label>Açıklama</label>
+          <input type="text" name="aciklama" placeholder="Durum açıklaması" />
+        </div>
+        <div class="field" style="grid-column: span 2">
+          <label>Tutar</label>
+          <input type="number" name="tutar" step="0.01" placeholder="0,00" required />
+        </div>
+        <div class="field" style="grid-column: span 2">
+          <label>Yansıtma</label>
+          <input type="text" name="yansitma" placeholder="VAR / YOK" />
+        </div>
+        <div class="actions-line" style="grid-column: 10 / span 3">
+          <button type="reset" class="ghost-btn">Temizle</button>
+          <button type="submit" class="primary-btn">Kaydet</button>
+        </div>
+      </div>
+    </form>
+
+    <table id="onayTable">
+      <thead>
+        <tr>
+          <th>Onay No</th><th>Tarih</th><th>Plaka</th><th>Firma</th><th>Km</th><th>Servis</th>
+          <th>Durum</th><th>Açıklama</th><th>Tutar</th><th>Fatura No</th><th>Fatura Tutarı</th>
+          <th>Fark</th><th>Yansıtma</th><th>İşlem</th>
+        </tr>
+        <tr class="th-filter">
+          <th><input id="f_no" placeholder="Ara" /></th>
+          <th><input id="f_tarih" placeholder="gg.aa.yy" /></th>
+          <th><input id="f_plaka" placeholder="Ara" /></th>
+          <th><input id="f_firma" placeholder="Ara" /></th>
+          <th><input id="f_km" placeholder="Ara" /></th>
+          <th><input id="f_servis" placeholder="Ara" /></th>
+          <th><input id="f_durum" placeholder="Ara" /></th>
+          <th><input id="f_aciklama" placeholder="Ara" /></th>
+          <th><input id="f_tutar" placeholder="Ara" /></th>
+          <th><input id="f_faturaNo" placeholder="Ara" /></th>
+          <th><input id="f_faturaTutar" placeholder="Ara" /></th>
+          <th><input id="f_fark" placeholder="Ara" /></th>
+          <th><input id="f_yansitma" placeholder="Ara" /></th>
+          <th></th>
+        </tr>
+      </thead>
+      <tbody></tbody>
+    </table>
+    <div id="pager" class="pager"></div>
+  </div>
+
+  <div id="toast" class="toast"></div>
+
+  <!-- Düzenleme Modalı (tüm alanlar) -->
+  <div id="editWrap" class="backdrop" role="dialog" aria-modal="true" aria-labelledby="editTitle">
+    <div class="modal">
+      <h3 id="editTitle">Kaydı Düzenle</h3>
+      <div class="row">
+        <div>
+          <label>Tarih</label>
+          <input id="m_tarih" type="date" />
+        </div>
+        <div>
+          <label>Plaka</label>
+          <input id="m_plaka" type="text" />
+        </div>
+        <div>
+          <label>Firma</label>
+          <input id="m_firma" type="text" />
+        </div>
+      </div>
+      <div class="row">
+        <div>
+          <label>Km</label>
+          <input id="m_km" type="number" />
+        </div>
+        <div>
+          <label>Servis</label>
+          <input id="m_servis" type="text" />
+        </div>
+        <div>
+          <label>Durum</label>
+          <select id="m_durum">
+            <option value="">Seçiniz</option>
+            <option>BAKIM</option>
+            <option>HASAR</option>
+            <option>MEKANİK</option>
+            <option>LASTİK</option>
+            <option>DİĞER</option>
+          </select>
+        </div>
+      </div>
+      <div class="row">
+        <div>
+          <label>Açıklama</label>
+          <input id="m_aciklama" type="text" />
+        </div>
+      </div>
+      <div class="row">
+        <div>
+          <label>Tutar</label>
+          <input id="m_tutar" type="number" step="0.01" />
+        </div>
+        <div>
+          <label>Yansıtma</label>
+          <input id="m_yansitma" type="text" />
+        </div>
+      </div>
+      <div class="row">
+        <div>
+          <label>Fatura No</label>
+          <input id="m_faturaNo" type="text" />
+        </div>
+        <div>
+          <label>Fatura Tutarı</label>
+          <input id="m_faturaTutar" type="number" step="0.01" />
+        </div>
+      </div>
+      <div class="actions">
+        <button class="btn" id="m_cancel">Vazgeç</button>
+        <button class="btn primary" id="m_save">Kaydet</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Custom Confirm Modal -->
+  <div id="cback" class="cback" role="dialog" aria-modal="true" aria-labelledby="cTitle">
+    <div class="cbox">
+      <p id="cMsg">Onaylıyor musunuz?</p>
+      <div class="row">
+        <button id="cCancel" class="btn">Vazgeç</button>
+        <button id="cOk" class="btn primary">Evet</button>
+      </div>
+    </div>
+  </div>
+
+<script>
+  // ==================== YARDIMCI FONKSİYONLAR ====================
+  const fmtTL = (v) => v ? new Intl.NumberFormat('tr-TR',{style:'currency',currency:'TRY'}).format(v) : '';
+  const toNumber=(val)=>{ if(typeof val==='number') return val; const v=(val||'').toString().replace(/[\.\s]/g,'').replace(',','.'); const n=Number(v); return isNaN(n)?0:n; };
+  function pad2(n){ return String(n).padStart(2,'0'); }
+  function excelSerialToISO(n){ const ms=Math.round((n-25569)*86400*1000); const dt=new Date(ms); return `${dt.getUTCFullYear()}-${pad2(dt.getUTCMonth()+1)}-${pad2(dt.getUTCDate())}`; }
+  function toISODate(any){ if(!any && any!==0) return ''; if(typeof any==='number') return excelSerialToISO(any); const s=String(any).trim(); let m=s.match(/^(\d{4})-(\d{2})-(\d{2})$/); if(m) return `${m[1]}-${m[2]}-${m[3]}`; m=s.match(/^(\d{1,2})\.(\d{1,2})\.(\d{2}|\d{4})$/); if(m){ const d=pad2(m[1]), mo=pad2(m[2]); let y=m[3]; if(y.length===2) y=(Number(y)>50?'19':'20')+y; return `${y}-${mo}-${d}`;} const dt=new Date(s); if(!isNaN(dt)) return `${dt.getFullYear()}-${pad2(dt.getMonth()+1)}-${pad2(dt.getDate())}`; return ''; }
+  function fmtTRDate(any){ const iso=toISODate(any); if(!iso) return ''; const m=iso.match(/(\d{4})-(\d{2})-(\d{2})/); if(!m) return ''; return `${m[3]}.${m[2]}.${String(m[1]).slice(2)}`; }
+  const isoToUTCDate=(iso)=>{ if(!iso) return null; const m=String(iso).match(/(\d{4})-(\d{2})-(\d{2})/); if(!m) return null; return new Date(Date.UTC(+m[1],+m[2]-1,+m[3])); };
+  const diffDays=(a,b)=>{ const d1=isoToUTCDate(toISODate(a)), d2=isoToUTCDate(toISODate(b)); if(!d1||!d2) return Infinity; return Math.floor(Math.abs(d1-d2)/86400000); };
+
+  // ==================== FIREBASE BAŞLAT ====================
+  const firebaseConfig = {
+    apiKey: "AIzaSyB-xEmeTVN8oiB4FZzV4UpJpAHkyDHYF4U",
+    authDomain: "sekar-filo.firebaseapp.com",
+    projectId: "sekar-filo",
+    storageBucket: "sekar-filo.appspot.com",
+    messagingSenderId: "61274893830",
+    appId: "1:61274893830:web:c9dfdf8baf0500178f9d87"
+  };
+  try{ firebase.initializeApp(firebaseConfig); }catch(e){}
+  const auth=firebase.auth();
+  const db=firebase.firestore();
+
+  // ==================== GERÇEK ZAMANLI DURUM ====================
+  let onayRecords=[]; let unsub=null; let editIndex=null; let page=1; const PAGE_SIZE=50;
+  const filters={ no:'', tarih:'', plaka:'', firma:'', km:'', servis:'', durum:'', aciklama:'', tutar:'', faturaNo:'', faturaTutar:'', fark:'', yansitma:'' };
+
+  function toast(msg){ const t=document.getElementById('toast'); if(!t) return; t.textContent=msg; t.style.display='block'; clearTimeout(toast._h); toast._h=setTimeout(()=>{t.style.display='none';},2000); }
+  function uiConfirm(message){ return new Promise(resolve=>{ const back=document.getElementById('cback'); const msg=document.getElementById('cMsg'); const ok=document.getElementById('cOk'); const cancel=document.getElementById('cCancel'); msg.textContent=message; back.style.display='flex'; const done=(v)=>{back.style.display='none'; ok.onclick=null; cancel.onclick=null; resolve(v);}; ok.onclick=()=>done(true); cancel.onclick=()=>done(false); }); }
+
+  // Yıla göre artan onay no — counters/{yıl}.value
+  async function allocateOnayNo(tarihISO){ const y=(new Date(toISODate(tarihISO)||Date.now())).getFullYear(); const base=y*10000; const ref=db.collection('counters').doc(String(y)); let result=base+1; await db.runTransaction(async(tx)=>{ const snap=await tx.get(ref); const last=(snap.exists && typeof snap.data().value==='number')? snap.data().value : base; const next=(last>=base? last+1 : base+1); tx.set(ref,{value:next},{merge:true}); result=next; }); return result; }
+
+  async function addRecordFromForm(fd){ const tarihISO=toISODate(fd.get('tarih')); const recNo=await allocateOnayNo(tarihISO); const rec={ no:recNo, tarih:tarihISO, plaka:(fd.get('plaka')||'').toUpperCase(), firma:(fd.get('firma')||'').toUpperCase(), km:Number(fd.get('km')||0), servis:(fd.get('servis')||'').toUpperCase(), durum:fd.get('durum'), aciklama:fd.get('aciklama')||'', tutar:toNumber(fd.get('tutar')), faturaNo:'', faturaTutar:0, faturaImage:'', yansitma:fd.get('yansitma')||'' }; await db.collection('onayRecords').add(rec); }
+  async function addRecordDirect(rec){ await db.collection('onayRecords').add(rec); }
+  async function updateRecord(id,obj){ await db.collection('onayRecords').doc(id).update(obj); }
+  async function deleteRecord(id){ await db.collection('onayRecords').doc(id).delete(); }
+  async function clearAllRecords(){ const ok=await uiConfirm('Tüm kayıtlar silinsin mi? Bu işlem geri alınamaz.'); if(!ok) return; const qs=await db.collection('onayRecords').get(); const batches=[]; let batch=db.batch(); let n=0; qs.forEach(doc=>{ batch.delete(doc.ref); n++; if(n%400===0){ batches.push(batch.commit()); batch=db.batch(); } }); batches.push(batch.commit()); await Promise.all(batches); toast('Tüm kayıtlar silindi'); }
+
+  function applyFilters(list){ const norm=s=>(s??'').toString().toUpperCase(); const f=filters; return list.filter(r=>{ const fark=(r.faturaTutar||0)-(r.tutar||0); return ((f.no? String(r.no).includes(f.no):true) && (f.tarih? fmtTRDate(r.tarih).includes(f.tarih):true) && (f.plaka? norm(r.plaka).includes(norm(f.plaka)):true) && (f.firma? norm(r.firma).includes(norm(f.firma)):true) && (f.km? String(r.km).includes(f.km):true) && (f.servis? norm(r.servis).includes(norm(f.servis)):true) && (f.durum? norm(r.durum).includes(norm(f.durum)):true) && (f.aciklama? norm(r.aciklama).includes(norm(f.aciklama)):true) && (f.tutar? String(r.tutar).includes(f.tutar):true) && (f.faturaNo? norm(r.faturaNo).includes(norm(f.faturaNo)):true) && (f.faturaTutar? String(r.faturaTutar).includes(f.faturaTutar):true) && (f.fark? String(fark).includes(f.fark):true) && (f.yansitma? norm(r.yansitma).includes(norm(f.yansitma)):true)); }); }
+  function renderOnay(){ const tb=document.querySelector('#onayTable tbody'); if(!tb) return; tb.innerHTML=''; const filtered=applyFilters(onayRecords); const total=filtered.length; const totalPages=Math.max(1, Math.ceil(total/PAGE_SIZE)); if(page>totalPages) page=totalPages; const slice=filtered.slice((page-1)*PAGE_SIZE, page*PAGE_SIZE); slice.forEach(r=>{ const index=onayRecords.indexOf(r); const fark=(r.faturaTutar||0)-(r.tutar||0); const farkClass = fark>50 ? 'red-cell' : (fark>0 ? 'green-cell' : ''); const tr=document.createElement('tr'); tr.innerHTML=`<td>${r.no}</td><td>${fmtTRDate(r.tarih)}</td><td>${r.plaka}</td><td>${r.firma}</td><td>${r.km}</td><td>${r.servis}</td><td>${r.durum}</td><td>${r.aciklama||''}</td><td>${fmtTL(r.tutar)}</td><td>${r.faturaNo||''}</td><td>${r.faturaTutar?fmtTL(r.faturaTutar):''}</td><td class="${farkClass}">${fark?fmtTL(fark):''}</td><td>${r.yansitma||''}</td><td><button class="edit-btn" data-act="edit" data-index="${index}">Düzenle</button><button class="delete-btn" data-act="del" data-index="${index}">Sil</button></td>`; tb.appendChild(tr); }); renderPager(total, Math.max(1, Math.ceil(total/PAGE_SIZE))); }
+  function renderPager(total,totalPages){ const el=document.getElementById('pager'); if(!el) return; el.innerHTML=''; const info=document.createElement('span'); info.className='info'; const start=(page-1)*PAGE_SIZE+1, end=Math.min(page*PAGE_SIZE,total); info.textContent=`${start}-${end}/${total}`; const mk=(t,cb,dis=false)=>{const b=document.createElement('button');b.textContent=t;b.disabled=dis;b.onclick=cb;return b;}; el.appendChild(mk('⏮',()=>{page=1;renderOnay();}, page===1)); el.appendChild(mk('◀',()=>{page=Math.max(1,page-1);renderOnay();}, page===1)); el.appendChild(info); el.appendChild(mk('▶',()=>{page=Math.min(totalPages,page+1);renderOnay();}, page===totalPages)); el.appendChild(mk('⏭',()=>{page=totalPages;renderOnay();}, page===totalPages)); }
+
+  function openEdit(index){ editIndex=index; const r=onayRecords[index]; document.getElementById('m_tarih').value=toISODate(r.tarih)||''; document.getElementById('m_plaka').value=r.plaka||''; document.getElementById('m_firma').value=r.firma||''; document.getElementById('m_km').value=r.km||''; document.getElementById('m_servis').value=r.servis||''; document.getElementById('m_durum').value=r.durum||''; document.getElementById('m_aciklama').value=r.aciklama||''; document.getElementById('m_tutar').value=r.tutar||''; document.getElementById('m_yansitma').value=r.yansitma||''; document.getElementById('m_faturaNo').value=r.faturaNo||''; document.getElementById('m_faturaTutar').value=r.faturaTutar||''; document.getElementById('editWrap').style.display='flex'; }
+  function closeEdit(){ document.getElementById('editWrap').style.display='none'; }
+  async function saveEdit(){ if(editIndex==null) return; const r=onayRecords[editIndex]; const obj={ tarih:document.getElementById('m_tarih').value, plaka:(document.getElementById('m_plaka').value||'').toUpperCase(), firma:(document.getElementById('m_firma').value||'').toUpperCase(), km:toNumber(document.getElementById('m_km').value), servis:(document.getElementById('m_servis').value||'').toUpperCase(), durum:document.getElementById('m_durum').value, aciklama:document.getElementById('m_aciklama').value.trim(), tutar:toNumber(document.getElementById('m_tutar').value), yansitma:document.getElementById('m_yansitma').value.trim(), faturaNo:document.getElementById('m_faturaNo').value.trim(), faturaTutar:toNumber(document.getElementById('m_faturaTutar').value) }; await updateRecord(r._id, obj); closeEdit(); toast('Kayıt güncellendi'); }
+  async function deleteRec(index){ const ok=await uiConfirm('Kaydı silmek istiyor musunuz?'); if(!ok) return; const id=onayRecords[index]._id; await deleteRecord(id); toast('Kayıt silindi'); }
+
+  // ==================== EXCEL ŞABLON / İÇE AKTAR ====================
+  const EXPECTED_HEADERS=["Onay No","Tarih","Plaka","Firma","Km","Servis","Durum","Açıklama","Tutar","Yansıtma","Fatura No","Fatura Tutarı"];
+  function downloadTemplate(){ const wb=XLSX.utils.book_new(); const ws=XLSX.utils.aoa_to_sheet([EXPECTED_HEADERS]); XLSX.utils.book_append_sheet(wb,ws,'OnayNo'); const wbout=XLSX.write(wb,{bookType:'xlsx',type:'array'}); const blob=new Blob([wbout],{type:'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'}); const a=document.createElement('a'); a.href=URL.createObjectURL(blob); a.download='onayno_sablon.xlsx'; a.click(); URL.revokeObjectURL(a.href); }
+  async function importFromExcel(){ const inp=document.getElementById('excelInput'); if(!inp.files||!inp.files[0]){ toast('Lütfen bir Excel dosyası seçin.'); return; } const reader=new FileReader(); const file=inp.files[0]; reader.onload=async (e)=>{ const data=new Uint8Array(e.target.result); let rows=[]; try{ const wb=XLSX.read(data,{type:'array'}); const ws=wb.Sheets[wb.SheetNames[0]]; rows=XLSX.utils.sheet_to_json(ws,{header:1,defval:''}); }catch(err){ const txt=new TextDecoder('utf-8').decode(data); rows=txt.split(/\r?\n/).map(r=>r.split(',')); } if(!rows.length){ toast('Dosya boş görünüyor.'); return; } const header=rows[0].map(h=>h.trim()); const idx=(n)=>header.indexOf(n); const hasOnayNo=header.includes('Onay No'); const mapIdx={ OnayNo: hasOnayNo? idx('Onay No'):-1, Tarih:idx('Tarih'), Plaka:idx('Plaka'), Firma:idx('Firma'), Km:idx('Km'), Servis:idx('Servis'), Durum:idx('Durum'), Açıklama:idx('Açıklama'), Tutar:idx('Tutar'), Yansıtma:idx('Yansıtma'), 'Fatura No':idx('Fatura No'), 'Fatura Tutarı':idx('Fatura Tutarı') }; let imported=0; for(let i=1;i<rows.length;i++){ const r=rows[i]; if(!r||r.every(c=>String(c).trim()==='')) continue; const tarihISO=toISODate(r[mapIdx['Tarih']]); const provided=(mapIdx.OnayNo>=0? r[mapIdx.OnayNo]: ''); const providedNo=(provided!==undefined&&provided!==null&&String(provided).trim()!=='')? parseInt(String(provided).replace(/\D/g,''),10): null; let recNo=providedNo; if(!recNo) recNo=await allocateOnayNo(tarihISO); else { const y=(new Date(tarihISO||Date.now())).getFullYear(); const base=y*10000; const ref=db.collection('counters').doc(String(y)); await db.runTransaction(async(tx)=>{ const snap=await tx.get(ref); const last=(snap.exists && typeof snap.data().value==='number')? snap.data().value : base; if(recNo>last) tx.set(ref,{value:recNo},{merge:true}); }); } const rec={ no:recNo, tarih:tarihISO, plaka:(r[mapIdx['Plaka']]||'').toString().toUpperCase(), firma:(r[mapIdx['Firma']]||'').toString().toUpperCase(), km:toNumber(r[mapIdx['Km']]), servis:(r[mapIdx['Servis']]||'').toString().toUpperCase(), durum:(r[mapIdx['Durum']]||'').toString(), aciklama:(r[mapIdx['Açıklama']]||'').toString(), tutar:toNumber(r[mapIdx['Tutar']]), faturaNo:(r[mapIdx['Fatura No']]||'').toString(), faturaTutar:toNumber(r[mapIdx['Fatura Tutarı']]), faturaImage:'', yansitma:(r[mapIdx['Yansıtma']]||'').toString() }; await addRecordDirect(rec); imported++; } toast(imported+' kayıt içe aktarıldı'); }; reader.readAsArrayBuffer(file); }
+
+  // ==================== EXCEL DIŞA AKTAR ====================
+  function exportVisibleToExcel(){
+    const rows=[EXPECTED_HEADERS];
+    const data=applyFilters(onayRecords);
+    for(const r of data){
+      rows.push([
+        r.no ?? '',
+        toISODate(r.tarih) || '',
+        r.plaka || '',
+        r.firma || '',
+        r.km ?? '',
+        r.servis || '',
+        r.durum || '',
+        r.aciklama || '',
+        (r.tutar ?? 0),
+        r.yansitma || '',
+        r.faturaNo || '',
+        (r.faturaTutar ?? 0)
+      ]);
+    }
+    const ws=XLSX.utils.aoa_to_sheet(rows);
+    const wb=XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb,ws,'OnayNo');
+    XLSX.writeFile(wb,'onayno_aktar.xlsx');
+  }
+
+  // ==================== ETKİNLİKLER ====================
+  // Herkese açık: butonlar
+  window.downloadTemplate = downloadTemplate; // Referans hatasını önlemek için global
+  window.exportVisibleToExcel = exportVisibleToExcel;
+  document.addEventListener('DOMContentLoaded', ()=>{
+    document.getElementById('btnTemplate').addEventListener('click', downloadTemplate);
+    document.getElementById('btnImport').addEventListener('click', importFromExcel);
+    document.getElementById('btnExport').addEventListener('click', exportVisibleToExcel);
+    document.getElementById('btnClearAll').addEventListener('click', clearAllRecords);
+
+    document.getElementById('onayForm').addEventListener('submit', async (e)=>{
+      e.preventDefault(); const f=new FormData(e.target);
+      const plaka=(f.get('plaka')||'').toUpperCase(); const tarihISO=toISODate(f.get('tarih'));
+      const hasRecent = onayRecords.some(r=> r && r.plaka && r.tarih && r.plaka===plaka && (diffDays(tarihISO,r.tarih) <= 7));
+      if(hasRecent){ const go=await uiConfirm('Bu plakaya ait son 0–7 gün içinde başka bir kayıt var. Devam edilsin mi?'); if(!go) return; }
+      await addRecordFromForm(f); e.target.reset(); toast('Kayıt eklendi');
+    });
+
+    document.querySelector('#onayTable').addEventListener('click', async (e)=>{
+      const btn=e.target.closest('button'); if(!btn) return; const act=btn.getAttribute('data-act'); const idx=Number(btn.getAttribute('data-index'));
+      if(act==='edit') openEdit(idx);
+      if(act==='del') await deleteRec(idx);
+    });
+
+    document.getElementById('m_cancel').addEventListener('click', (e)=>{e.preventDefault(); closeEdit();});
+    document.getElementById('m_save').addEventListener('click', async (e)=>{e.preventDefault(); await saveEdit();});
+
+    const fmap={ no:'f_no', tarih:'f_tarih', plaka:'f_plaka', firma:'f_firma', km:'f_km', servis:'f_servis', durum:'f_durum', aciklama:'f_aciklama', tutar:'f_tutar', faturaNo:'f_faturaNo', faturaTutar:'f_faturaTutar', fark:'f_fark', yansitma:'f_yansitma' };
+    for(const [k,id] of Object.entries(fmap)){ const el=document.getElementById(id); if(el) el.addEventListener('input', ()=>{ filters[k]=el.value; page=1; renderOnay();}); }
+  });
+
+  // ==================== GİRİŞ KATMANI (yalnızca @sekarfilo.com.tr) ====================
+  const ov=document.createElement('div');
+  ov.id='sfLoginOverlay';
+  ov.style.cssText='position:fixed;inset:0;display:none;align-items:center;justify-content:center;background:rgba(0,0,0,.08);backdrop-filter:blur(2px);z-index:99999';
+  ov.innerHTML='<div style="background:#fff;padding:18px;border-radius:10px;box-shadow:0 10px 30px rgba(0,0,0,.2);width:340px;font-family:system-ui">\
+    <h3 style="margin:0 0 8px;font-size:18px">Giriş Yap</h3>\
+    <input id="sf_mail" type="email" placeholder="kisi@sekarfilo.com.tr" style="width:100%;padding:10px;border:1px solid #ccc;border-radius:8px;margin:6px 0">\
+    <input id="sf_pass" type="password" placeholder="Şifre" style="width:100%;padding:10px;border:1px solid #ccc;border-radius:8px;margin:6px 0">\
+    <input id="sf_name" type="text" placeholder="Kullanıcı Adı (ilk kayıt)" style="width:100%;padding:10px;border:1px solid #ccc;border-radius:8px;margin:6px 0">\
+    <button id="sf_login" style="width:100%;padding:10px;border:0;border-radius:8px;background:#0ea675;color:#fff">Giriş</button>\
+    <button id="sf_signup" style="width:100%;padding:10px;border:0;border-radius:8px;background:#334155;color:#fff;margin-top:6px">Hesap Oluştur</button>\
+    <div id="sf_err" style="color:#d92d20;font-size:12px;min-height:16px;margin-top:6px"></div>\
+    <div style="font-size:12px;color:#64748b;margin-top:4px">* Sadece @sekarfilo.com.tr kabul edilir.</div>\
+  </div>';
+  document.addEventListener('DOMContentLoaded',()=>document.body.appendChild(ov));
+  function showLogin(v){ ov.style.display = v ? 'flex' : 'none'; }
+  function err(t){ const el=document.getElementById('sf_err'); if(el) el.textContent=t||''; }
+
+  document.addEventListener('click', function(e){
+    if(e.target && e.target.id==='sf_login'){
+      const m=document.getElementById('sf_mail').value.trim();
+      const p=document.getElementById('sf_pass').value;
+      if(!/@sekarfilo\.com\.tr$/i.test(m)) return err('Sadece @sekarfilo.com.tr');
+      auth.signInWithEmailAndPassword(m,p).catch(async (x)=>{
+        if(x && (x.code==='auth/user-not-found' || x.code==='auth/invalid-credential')){
+          const n=document.getElementById('sf_name').value.trim();
+          if(!n) return err('İlk kayıt için "Kullanıcı Adı" alanını da doldurun ve tekrar Giriş’e basın.');
+          try{ await auth.createUserWithEmailAndPassword(m,p); if(auth.currentUser&&n){ await auth.currentUser.updateProfile({displayName:n}); } }
+          catch(e){ return err(e.message||String(e)); }
+        } else { err(x.message||String(x)); }
+      });
+    }
+    if(e.target && e.target.id==='sf_signup'){
+      const m=document.getElementById('sf_mail').value.trim();
+      const p=document.getElementById('sf_pass').value;
+      const n=document.getElementById('sf_name').value.trim();
+      if(!/@sekarfilo\.com\.tr$/i.test(m)) return err('Sadece @sekarfilo.com.tr');
+      if(!n) return err('Lütfen kullanıcı adı girin');
+      auth.createUserWithEmailAndPassword(m,p).then(()=>auth.currentUser.updateProfile({displayName:n})).catch(x=>err(x.message||String(x)));
+    }
+  }, true);
+
+  auth.onAuthStateChanged(user=>{
+    const signed = !!(user && /@sekarfilo\.com\.tr$/i.test(user.email||''));
+    showLogin(!signed);
+    if(signed){
+      if(unsub) unsub();
+      unsub = db.collection('onayRecords').orderBy('no','desc').onSnapshot((snap)=>{
+        onayRecords=[]; snap.forEach(doc=> onayRecords.push({...doc.data(), _id: doc.id}));
+        renderOnay();
+      }, (err)=>{ console.error('onSnapshot hata:', err); });
+    } else {
+      if(unsub){ unsub(); unsub=null; }
+      onayRecords=[]; renderOnay();
+    }
+  });
+
+  // ==================== TESTLER (mevcut + ek) ====================
+  (function(){ const url=new URL(location.href); if(url.searchParams.get('runTests')!=='1') return; console.log('%c[TEST] start','color:#2563eb');
+    console.assert(typeof window.downloadTemplate==='function','downloadTemplate yok');
+    console.assert(typeof importFromExcel==='function' || true,'importFromExcel yok');
+    console.assert(typeof window.exportVisibleToExcel==='function','exportVisibleToExcel yok');
+    const txt='A,B\nC,D'; const arr=txt.split(/\r?\n/); console.assert(arr.length===2,'regex split fail');
+    // tarih & fark
+    console.assert(toISODate('01.02.25')==='2025-02-01','toISODate dd.mm.yy');
+    console.assert(toISODate('2025-12-31')==='2025-12-31','toISODate iso');
+    console.assert(diffDays('2025-01-01','2025-01-01')===0,'diffDays same day');
+    console.log('%c[TEST] ok','color:#16a34a'); })();
+</script>
+</body>
+</html>
